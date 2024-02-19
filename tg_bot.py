@@ -27,6 +27,7 @@ admins_ids: tuple = ADMINS_IDS
 ANON_STEP, PROPOSED_CONTENT_STEP = 0, 1
 
 post_proposal_user = [None, None]
+isAnon = False
 
 
 # Command handlers
@@ -75,6 +76,7 @@ async def postCommand(
         reply_markup=ReplyKeyboardMarkup(
             reply_keyboard,
             one_time_keyboard=True,
+            resize_keyboard=True,
         ),
     )
 
@@ -88,7 +90,8 @@ async def checkAnon(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         or update.message.text.lower() == "ні"
     ):
         if update.message.text.lower() == "так":
-            pass
+            global isAnon
+            isAnon = True
         elif update.message.text.lower() == "ні":
             global post_proposal_user
             post_proposal_user[0] = update.message.from_user.id
@@ -99,22 +102,26 @@ async def checkAnon(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         await update.message.reply_text(
             "Невірний варіант відповіді. Спробуй ще раз."
         )
-        postCommand()
+        return None
 
 
 async def proposeContent(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
-    global post_proposal_user
+    global post_proposal_user, isAnon
+    msg_text = ""
     await update.message.reply_text(
         "Дякую! Твій пост надісланий на перевірку адміністрації!"
     )
-    user_id = post_proposal_user[0]
-    username = post_proposal_user[1]
+    if isAnon:
+        msg_text = "Анонім запропонував пост."
+    else:
+        msg_text = f"@{post_proposal_user[1]} ({post_proposal_user[0]}) запропонував пост."
+
     for admin_id in ADMINS_IDS:
         await context.bot.send_message(
             chat_id=admin_id,
-            text=f"@{username}",
+            text=msg_text,
         )
         await context.bot.forward_message(
             chat_id=admin_id,
@@ -198,7 +205,9 @@ if __name__ == "__main__":
                         | filters.VIDEO
                         | filters.VOICE
                         | filters.TEXT
-                        | filters.Sticker.ALL,
+                        | filters.Sticker.ALL
+                        | filters.VIDEO_NOTE
+                        | filters.VOICE,
                         proposeContent,
                     )
                 ],
