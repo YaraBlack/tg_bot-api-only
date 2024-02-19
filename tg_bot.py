@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 # Set constants
 admins_ids: tuple = ADMINS_IDS
-ANON_STEP, PROPOSED_CONTENT_STEP = 0, 1
+ANON_STEP, PROPOSED_CONTENT_STEP, FINISH_STEP = range(3)
 
 post_proposal_user = [None, None]
 isAnon = False
@@ -96,7 +96,7 @@ async def checkAnon(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             global post_proposal_user
             post_proposal_user[0] = update.message.from_user.id
             post_proposal_user[1] = update.message.from_user.username
-        await update.message.reply_text("Надішли свій пост:")
+        await update.message.reply_text("Надішли свій пост (до 10-ти файлів):")
         return PROPOSED_CONTENT_STEP
     else:
         await update.message.reply_text(
@@ -108,6 +108,11 @@ async def checkAnon(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def proposeContent(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
+
+    return FINISH_STEP
+
+
+async def finish(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global post_proposal_user, isAnon
     msg_text = ""
     await update.message.reply_text(
@@ -211,6 +216,7 @@ if __name__ == "__main__":
                         proposeContent,
                     )
                 ],
+                FINISH_STEP: [CommandHandler("finish", finish)],
             },
             fallbacks=[CommandHandler("cancel", cancel)],
         )
@@ -221,8 +227,4 @@ if __name__ == "__main__":
 
     # Bot polling
     print("Polling...")
-    app.run_polling(poll_interval=3, allowed_updates=Update.ALL_TYPES)
-
-# Bugs section - temporary
-# - 'else' part in checkAnon is not working
-# add additional commands in Botfather
+    app.run_polling(poll_interval=1, allowed_updates=Update.ALL_TYPES)
