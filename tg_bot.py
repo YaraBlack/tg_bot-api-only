@@ -68,11 +68,18 @@ async def sendMediaGroup(context: CallbackContext):
         )
         if not media:
             return
+
+        print(
+            f"msg_dict: {msg_dict}\n",
+            f"media: {media}\n",
+            f"context.job.data: {context.job.data}\n",
+        )
         msgs = await bot.send_media_group(chat_id=ADMINS_IDS[0], media=media)
         for index, msg in enumerate(msgs):
             context.bot_data["messages"][
-                context.job.data["message_id"]
+                context.job.data[index]["message_id"]
             ] = msg.message_id
+            print(f"2 context.bot_data: {context.bot_data}")
 
 
 # Command handlers
@@ -295,7 +302,8 @@ if __name__ == "__main__":
 
     # Errors
     app.add_error_handler(error)
-
+    if "messages" not in app.bot_data:
+        app.bot_data = {"messages": {}}
     # Bot polling
     print("Polling...")
     app.run_polling(poll_interval=1, allowed_updates=Update.ALL_TYPES)
