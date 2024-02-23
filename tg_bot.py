@@ -55,7 +55,7 @@ class MsgDict(TypedDict):
     message_id: int
 
 
-# Create function to handle sending media group
+# Function to handle sending media group
 async def sendMediaGroup(context: CallbackContext):
     bot = context.bot
     context.job.data = cast(list[MsgDict], context.job.data)
@@ -69,17 +69,26 @@ async def sendMediaGroup(context: CallbackContext):
         if not media:
             return
 
-        print(
-            f"msg_dict: {msg_dict}\n",
-            f"media: {media}\n",
-            f"context.job.data: {context.job.data}\n",
+        await bot.send_media_group(chat_id=ADMINS_IDS[0], media=media)
+
+
+# Function to send a notification to admins
+async def sendNotification(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global post_proposal_user, isAnon
+    msg_text = ""
+    await update.message.reply_text(
+        "Дякую! Твій пост надісланий на перевірку адміністрації!"
+    )
+    if isAnon:
+        msg_text = "Анонім запропонував пост."
+    else:
+        msg_text = f"@{post_proposal_user[1]} ({post_proposal_user[0]}) запропонував пост."
+    for admin_id in ADMINS_IDS:
+        await context.bot.send_message(
+            chat_id=admin_id,
+            text=msg_text,
         )
-        msgs = await bot.send_media_group(chat_id=ADMINS_IDS[0], media=media)
-        for index, msg in enumerate(msgs):
-            context.bot_data["messages"][
-                context.job.data[index]["message_id"]
-            ] = msg.message_id
-            print(f"2 context.bot_data: {context.bot_data}")
+    return
 
 
 # Command handlers
@@ -160,20 +169,7 @@ async def checkAnon(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def proposeContent(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
-    global post_proposal_user, isAnon
-    msg_text = ""
-    await update.message.reply_text(
-        "Дякую! Твій пост надісланий на перевірку адміністрації!"
-    )
-    if isAnon:
-        msg_text = "Анонім запропонував пост."
-    else:
-        msg_text = f"@{post_proposal_user[1]} ({post_proposal_user[0]}) запропонував пост."
-    for admin_id in ADMINS_IDS:
-        await context.bot.send_message(
-            chat_id=admin_id,
-            text=msg_text,
-        )
+
     if update.message.media_group_id:
         message = update.effective_message
         media_type = effective_message_type(message)
@@ -188,29 +184,26 @@ async def proposeContent(
             "caption": message.caption_html,
             "message_id": message.message_id,
         }
-        jobs = context.job_queue.get_jobs_by_name(str(message.media_group_id))
-        if jobs:
-            print(f"jobs[0].data before exec: {jobs[0].data}")
-            jobs[0].data.append(msg_dict)
-            print(f"jobs[0].data after exec: {jobs[0].data}")
-        else:
-            print("Running job")
-            context.job_queue.run_once(
-                callback=sendMediaGroup,
-                when=2,
-                data=[msg_dict],
-                name=str(message.media_group_id),
-            )
-        print("Multiple media")
+        # jobs = context.job_queue.get_jobs_by_name(str(message.media_group_id))
+        # if jobs:
+        #     jobs[0].data.append(msg_dict)
+        # else:
+        print("Running job")
+        context.job_queue.run_once(
+            callback=sendMediaGroup,
+            when=2,
+            data=[msg_dict],
+            name=str(message.media_group_id),
+        )
         return None
     else:
+        await sendNotification(update, context)
         for admin_id in ADMINS_IDS:
             await context.bot.forward_message(
                 chat_id=admin_id,
                 from_chat_id=update.effective_chat.id,
                 message_id=update.message.message_id,
             )
-        print("I've sent single media.")
         return ConversationHandler.END
 
 
