@@ -1,14 +1,25 @@
 import logging
+from typing import TypedDict, Literal, cast
 from config import *
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram import (
+    Update,
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
+    InputMediaAudio,
+    InputMediaPhoto,
+    InputMediaAnimation,
+    InputMediaVideo,
+)
 from telegram.ext import (
     Application,
     MessageHandler,
     CommandHandler,
     filters,
     ContextTypes,
+    CallbackContext,
     ConversationHandler,
 )
+from telegram.helpers import effective_message_type
 
 # Enable logging
 logging.basicConfig(
@@ -24,10 +35,60 @@ logger = logging.getLogger(__name__)
 
 # Set constants
 admins_ids: tuple = ADMINS_IDS
-ANON_STEP, PROPOSED_CONTENT_STEP = 0, 1
+ANON_STEP, PROPOSED_CONTENT_STEP = range(2)
+MEDIA_GROUP_TYPES = {
+    "audio": InputMediaAudio,
+    "video": InputMediaVideo,
+    "photo": InputMediaPhoto,
+    "animation": InputMediaAnimation,
+}
 
 post_proposal_user = [None, None]
 isAnon = False
+
+
+# Create typed dictionary for media item
+class MsgDict(TypedDict):
+    media_type: Literal["audio", "video", "photo", "animation"]
+    media_id: str
+    caption: str
+    message_id: int
+
+
+# Function to handle sending media group
+async def sendMediaGroup(context: CallbackContext):
+    bot = context.bot
+    context.job.data = cast(list[MsgDict], context.job.data)
+    media = []
+    for msg_dict in context.job.data:
+        media.append(
+            MEDIA_GROUP_TYPES[msg_dict["media_type"]](
+                media=msg_dict["media_id"], caption=msg_dict["caption"]
+            )
+        )
+    if not media:
+        return
+
+    await bot.send_media_group(chat_id=ADMINS_IDS[0], media=media)
+
+
+# Function to send a notification to admins
+async def sendNotification(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global post_proposal_user, isAnon
+    msg_text = ""
+    await update.message.reply_text(
+        "Дякую! Твій пост надісланий на перевірку адміністрації!"
+    )
+    if isAnon:
+        msg_text = "Анонім запропонував пост."
+    else:
+        msg_text = f"@{post_proposal_user[1]} ({post_proposal_user[0]}) запропонував пост."
+    for admin_id in ADMINS_IDS:
+        await context.bot.send_message(
+            chat_id=admin_id,
+            text=msg_text,
+        )
+    return
 
 
 # Command handlers
@@ -96,7 +157,11 @@ async def checkAnon(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             global post_proposal_user
             post_proposal_user[0] = update.message.from_user.id
             post_proposal_user[1] = update.message.from_user.username
-        await update.message.reply_text("Надішли свій пост:")
+
+        await update.message.reply_text(
+            "Надішли свій пост (до 10-ти файлів):",
+            reply_markup=ReplyKeyboardRemove(),
+        )
         return PROPOSED_CONTENT_STEP
     else:
         await update.message.reply_text(
@@ -108,31 +173,49 @@ async def checkAnon(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def proposeContent(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
-    global post_proposal_user, isAnon
-    msg_text = ""
-    await update.message.reply_text(
-        "Дякую! Твій пост надісланий на перевірку адміністрації!"
-    )
-    if isAnon:
-        msg_text = "Анонім запропонував пост."
-    else:
-        msg_text = f"@{post_proposal_user[1]} ({post_proposal_user[0]}) запропонував пост."
 
-    for admin_id in ADMINS_IDS:
-        await context.bot.send_message(
-            chat_id=admin_id,
-            text=msg_text,
+    if update.message.media_group_id:
+        message = update.effective_message
+        media_type = effective_message_type(message)
+        media_id = (
+            message.photo[-1].file_id
+            if message.photo
+            else message.effective_attachment.file_id
         )
-        await context.bot.forward_message(
-            chat_id=admin_id,
-            from_chat_id=update.effective_chat.id,
-            message_id=update.message.message_id,
-        )
-    return ConversationHandler.END
+        msg_dict = {
+            "media_type": media_type,
+            "media_id": media_id,
+            "caption": message.caption_html,
+            "message_id": message.message_id,
+        }
+        jobs = context.job_queue.get_jobs_by_name(str(message.media_group_id))
+        if jobs:
+            print(f"jobs: {jobs}")
+            jobs[0].data.append(msg_dict)
+        else:
+            print("Running job")
+            context.job_queue.run_once(
+                callback=sendMediaGroup,
+                when=2,
+                data=[msg_dict],
+                name=str(message.media_group_id),
+            )
+        return None
+    else:
+        await sendNotification(update, context)
+        for admin_id in ADMINS_IDS:
+            await context.bot.forward_message(
+                chat_id=admin_id,
+                from_chat_id=update.effective_chat.id,
+                message_id=update.message.message_id,
+            )
+        return ConversationHandler.END
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("Відмінено.")
+    await update.message.reply_text(
+        "Відмінено.", reply_markup=ReplyKeyboardRemove()
+    )
     return ConversationHandler.END
 
 
@@ -218,11 +301,8 @@ if __name__ == "__main__":
 
     # Errors
     app.add_error_handler(error)
-
+    if "messages" not in app.bot_data:
+        app.bot_data = {"messages": {}}
     # Bot polling
     print("Polling...")
-    app.run_polling(poll_interval=3, allowed_updates=Update.ALL_TYPES)
-
-# Bugs section - temporary
-# - 'else' part in checkAnon is not working
-# add additional commands in Botfather
+    app.run_polling(poll_interval=1, allowed_updates=Update.ALL_TYPES)
