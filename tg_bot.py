@@ -169,13 +169,12 @@ async def proposeContent(
         msg_text = "Анонім запропонував пост."
     else:
         msg_text = f"@{post_proposal_user[1]} ({post_proposal_user[0]}) запропонував пост."
-
+    for admin_id in ADMINS_IDS:
+        await context.bot.send_message(
+            chat_id=admin_id,
+            text=msg_text,
+        )
     if update.message.media_group_id:
-        for admin_id in ADMINS_IDS:
-            await context.bot.send_message(
-                chat_id=admin_id,
-                text=msg_text,
-            )
         message = update.effective_message
         media_type = effective_message_type(message)
         media_id = (
@@ -191,8 +190,11 @@ async def proposeContent(
         }
         jobs = context.job_queue.get_jobs_by_name(str(message.media_group_id))
         if jobs:
+            print(f"jobs[0].data before exec: {jobs[0].data}")
             jobs[0].data.append(msg_dict)
+            print(f"jobs[0].data after exec: {jobs[0].data}")
         else:
+            print("Running job")
             context.job_queue.run_once(
                 callback=sendMediaGroup,
                 when=2,
@@ -200,19 +202,16 @@ async def proposeContent(
                 name=str(message.media_group_id),
             )
         print("Multiple media")
+        return None
     else:
         for admin_id in ADMINS_IDS:
-            await context.bot.send_message(
-                chat_id=admin_id,
-                text=msg_text,
-            )
             await context.bot.forward_message(
                 chat_id=admin_id,
                 from_chat_id=update.effective_chat.id,
                 message_id=update.message.message_id,
             )
         print("I've sent single media.")
-    return ConversationHandler.END
+        return ConversationHandler.END
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
