@@ -66,10 +66,10 @@ async def sendMediaGroup(context: CallbackContext):
                 media=msg_dict["media_id"], caption=msg_dict["caption"]
             )
         )
-        if not media:
-            return
+    if not media:
+        return
 
-        await bot.send_media_group(chat_id=ADMINS_IDS[0], media=media)
+    await bot.send_media_group(chat_id=ADMINS_IDS[0], media=media)
 
 
 # Function to send a notification to admins
@@ -157,7 +157,11 @@ async def checkAnon(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             global post_proposal_user
             post_proposal_user[0] = update.message.from_user.id
             post_proposal_user[1] = update.message.from_user.username
-        await update.message.reply_text("Надішли свій пост (до 10-ти файлів):")
+
+        await update.message.reply_text(
+            "Надішли свій пост (до 10-ти файлів):",
+            reply_markup=ReplyKeyboardRemove(),
+        )
         return PROPOSED_CONTENT_STEP
     else:
         await update.message.reply_text(
@@ -184,17 +188,18 @@ async def proposeContent(
             "caption": message.caption_html,
             "message_id": message.message_id,
         }
-        # jobs = context.job_queue.get_jobs_by_name(str(message.media_group_id))
-        # if jobs:
-        #     jobs[0].data.append(msg_dict)
-        # else:
-        print("Running job")
-        context.job_queue.run_once(
-            callback=sendMediaGroup,
-            when=2,
-            data=[msg_dict],
-            name=str(message.media_group_id),
-        )
+        jobs = context.job_queue.get_jobs_by_name(str(message.media_group_id))
+        if jobs:
+            print(f"jobs: {jobs}")
+            jobs[0].data.append(msg_dict)
+        else:
+            print("Running job")
+            context.job_queue.run_once(
+                callback=sendMediaGroup,
+                when=2,
+                data=[msg_dict],
+                name=str(message.media_group_id),
+            )
         return None
     else:
         await sendNotification(update, context)
@@ -205,10 +210,19 @@ async def proposeContent(
                 message_id=update.message.message_id,
             )
         return ConversationHandler.END
+    # for admin_id in ADMINS_IDS:
+    #     await context.bot.forward_message(
+    #         chat_id=admin_id,
+    #         from_chat_id=update.effective_chat.id,
+    #         message_id=update.message.message_id,
+    #     )
+    # return None
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("Відмінено.")
+    await update.message.reply_text(
+        "Відмінено.", reply_markup=ReplyKeyboardRemove()
+    )
     return ConversationHandler.END
 
 
