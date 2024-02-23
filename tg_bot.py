@@ -210,13 +210,6 @@ async def proposeContent(
                 message_id=update.message.message_id,
             )
         return ConversationHandler.END
-    # for admin_id in ADMINS_IDS:
-    #     await context.bot.forward_message(
-    #         chat_id=admin_id,
-    #         from_chat_id=update.effective_chat.id,
-    #         message_id=update.message.message_id,
-    #     )
-    # return None
 
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
