@@ -159,7 +159,10 @@ async def checkAnon(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
             post_proposal_user[1] = update.message.from_user.username
 
         await update.message.reply_text(
-            "Надішли свій пост (до 10-ти файлів):",
+            """Надішли свій пост.
+Якщо відправляєш більше 1 медіа файлу - напиши /finish як закінчиш.
+Якщо бажаєш відправити лише 1 файл - писати нічого не потрібно.
+Надісланий пост буде направлено адміністрації на перевірку""",
             reply_markup=ReplyKeyboardRemove(),
         )
         return PROPOSED_CONTENT_STEP
@@ -173,49 +176,56 @@ async def checkAnon(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 async def proposeContent(
     update: Update, context: ContextTypes.DEFAULT_TYPE
 ) -> int:
-
-    if update.message.media_group_id:
-        message = update.effective_message
-        media_type = effective_message_type(message)
-        media_id = (
-            message.photo[-1].file_id
-            if message.photo
-            else message.effective_attachment.file_id
-        )
-        msg_dict = {
-            "media_type": media_type,
-            "media_id": media_id,
-            "caption": message.caption_html,
-            "message_id": message.message_id,
-        }
-        jobs = context.job_queue.get_jobs_by_name(str(message.media_group_id))
-        if jobs:
-            print(f"jobs: {jobs}")
-            jobs[0].data.append(msg_dict)
-        else:
-            print("Running job")
-            context.job_queue.run_once(
-                callback=sendMediaGroup,
-                when=2,
-                data=[msg_dict],
-                name=str(message.media_group_id),
+    if update.message.text != "/finish":
+        if update.message.media_group_id:
+            message = update.effective_message
+            media_type = effective_message_type(message)
+            media_id = (
+                message.photo[-1].file_id
+                if message.photo
+                else message.effective_attachment.file_id
             )
-        return None
+            msg_dict = {
+                "media_type": media_type,
+                "media_id": media_id,
+                "caption": message.caption_html,
+                "message_id": message.message_id,
+            }
+            jobs = context.job_queue.get_jobs_by_name(
+                str(message.media_group_id)
+            )
+            if jobs:
+                print(f"jobs: {jobs}")
+                jobs[0].data.append(msg_dict)
+            else:
+                context.job_queue.run_once(
+                    callback=sendMediaGroup,
+                    when=2,
+                    data=[msg_dict],
+                    name=str(message.media_group_id),
+                )
+            return None
+
+        else:
+            await sendNotification(update, context)
+            for admin_id in ADMINS_IDS:
+                await context.bot.forward_message(
+                    chat_id=admin_id,
+                    from_chat_id=update.effective_chat.id,
+                    message_id=update.message.message_id,
+                )
+            return ConversationHandler.END
+
     else:
         await sendNotification(update, context)
-        for admin_id in ADMINS_IDS:
-            await context.bot.forward_message(
-                chat_id=admin_id,
-                from_chat_id=update.effective_chat.id,
-                message_id=update.message.message_id,
-            )
         return ConversationHandler.END
 
 
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def cancel(update: Update) -> int:
     await update.message.reply_text(
         "Відмінено.", reply_markup=ReplyKeyboardRemove()
     )
+
     return ConversationHandler.END
 
 
